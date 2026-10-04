@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
 html,body{height:100%;margin:0;font-family:Arial,Helvetica,sans-serif;background:#000;color:#fff}
-#map{position:absolute;top:92px;left:0;right:0;bottom:0}
+#map{position:absolute;top:92px;left:0;right:0;bottom:0;background:#ddd}
 .top{position:absolute;top:0;left:0;right:0;height:92px;z-index:1000;background:#000;box-sizing:border-box;padding:10px 12px;border-bottom:1px solid #3a3a3a;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .title{font-size:17px;font-weight:700;margin-right:4px;color:#fff}
 input{flex:1;min-width:180px;max-width:380px;padding:9px 10px;border:1px solid #888;border-radius:8px;font-size:14px;background:#111;color:#fff;outline:none}
@@ -20,12 +20,11 @@ button.alt{background:#111;color:#fff;border-color:#777}
 .st-name{font-size:16px;font-weight:700;margin-bottom:4px;color:#000}
 .st-meta{font-size:12px;color:#333;margin:4px 0 10px}
 .tablo{display:inline-block;padding:9px 11px;border-radius:8px;background:#000;color:#fff!important;text-decoration:none;font-weight:700;border:1px solid #333}
-.stop-dot{background:#ffd400;border:2px solid #000;border-radius:50%;box-shadow:0 0 0 1px #ffd400,0 0 10px rgba(255,212,0,.3);width:12px;height:12px}
-.dark-osm-tiles{filter:grayscale(1) invert(1) brightness(.62) contrast(1.28);}
-.leaflet-control-zoom a{background:#000!important;color:#fff!important;border-bottom-color:#333!important}
-.leaflet-control-zoom{border:1px solid #333!important}
-.leaflet-control-attribution{background:rgba(0,0,0,.75)!important;color:#ddd!important}
-.leaflet-control-attribution a{color:#fff!important}
+.stop-dot{background:#ffd400;border:2px solid #111;border-radius:50%;box-shadow:0 0 0 1px #ffd400,0 0 7px rgba(255,212,0,.45);width:12px;height:12px}
+.leaflet-control-zoom a{background:#fff!important;color:#111!important;border-bottom-color:#ccc!important}
+.leaflet-control-zoom{border:1px solid #bbb!important}
+.leaflet-control-attribution{background:rgba(255,255,255,.88)!important;color:#444!important}
+.leaflet-control-attribution a{color:#111!important}
 @media(max-width:700px){.top{height:136px;align-content:flex-start}.title{width:100%}#map{top:136px}.status{width:100%}}
 </style>
 </head>
@@ -43,8 +42,7 @@ button.alt{background:#111;color:#fff;border-color:#777}
 const map=L.map('map',{preferCanvas:true}).setView([54.6872,25.2797],11);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
   maxZoom:19,
-  attribution:'&copy; OpenStreetMap contributors',
-  className:'dark-osm-tiles'
+  attribution:'&copy; OpenStreetMap contributors'
 }).addTo(map);
 
 const statusEl=document.getElementById('status');
