@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vilniaus stotelės → JUDU švieslentės</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+html,body{height:100%;margin:0;font-family:Arial,Helvetica,sans-serif;background:#000;color:#fff}
+#map{position:absolute;top:92px;left:0;right:0;bottom:0}
+.top{position:absolute;top:0;left:0;right:0;height:92px;z-index:1000;background:#000;box-sizing:border-box;padding:10px 12px;border-bottom:1px solid #3a3a3a;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.title{font-size:17px;font-weight:700;margin-right:4px;color:#fff}
+input{flex:1;min-width:180px;max-width:380px;padding:9px 10px;border:1px solid #888;border-radius:8px;font-size:14px;background:#111;color:#fff;outline:none}
+input::placeholder{color:#bbb}
+button{padding:9px 12px;border:1px solid #8a8a8a;border-radius:8px;background:#fff;color:#000;font-size:14px;cursor:pointer;font-weight:700}
+button.alt{background:#111;color:#fff;border-color:#777}
+.status{font-size:12px;color:#ddd;min-width:220px}
+.leaflet-popup-content{min-width:220px}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#fff;color:#000}
+.st-name{font-size:16px;font-weight:700;margin-bottom:4px;color:#000}
+.st-meta{font-size:12px;color:#333;margin:4px 0 10px}
+.tablo{display:inline-block;padding:9px 11px;border-radius:8px;background:#000;color:#fff!important;text-decoration:none;font-weight:700;border:1px solid #333}
+.stop-dot{background:#ffd400;border:2px solid #000;border-radius:50%;box-shadow:0 0 0 1px #ffd400,0 0 10px rgba(255,212,0,.3);width:12px;height:12px}
+.dark-osm-tiles{filter:grayscale(1) invert(1) brightness(.62) contrast(1.28);}
+.leaflet-control-zoom a{background:#000!important;color:#fff!important;border-bottom-color:#333!important}
+.leaflet-control-zoom{border:1px solid #333!important}
+.leaflet-control-attribution{background:rgba(0,0,0,.75)!important;color:#ddd!important}
+.leaflet-control-attribution a{color:#fff!important}
+@media(max-width:700px){.top{height:136px;align-content:flex-start}.title{width:100%}#map{top:136px}.status{width:100%}}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="title">Vilniaus stotelės → švieslentės</div>
+  <input id="q" placeholder="Pvz. Lazdynėliai arba 1652" />
+  <button id="find">Rasti</button>
+  <button id="all" class="alt">Visos</button>
+  <div id="status" class="status">Kraunamos stotelės…</div>
+</div>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map',{preferCanvas:true}).setView([54.6872,25.2797],11);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:19,
+  attribution:'&copy; OpenStreetMap contributors',
+  className:'dark-osm-tiles'
+}).addTo(map);
+
+const statusEl=document.getElementById('status');
+const qEl=document.getElementById('q');
+const group=L.layerGroup().addTo(map);
+let records=[], markers=[], fullBounds=L.latLngBounds();
+const icon=L.divIcon({className:'',html:'<div class="stop-dot"></div>',iconSize:[12,12],iconAnchor:[6,6]});
+
+function csvParse(text){
+  const rows=[]; let row=[], field='', quoted=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(quoted){
+      if(c==='"' && text[i+1]==='"'){field+='"';i++;}
+      else if(c==='"'){quoted=false;}
+      else field+=c;
+    } else {
+      if(c==='"') quoted=true;
+      else if(c===','){row.push(field);field='';}
+      else if(c==='\n'){row.push(field.replace(/\r$/,''));rows.push(row);row=[];field='';}
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){row.push(field.replace(/\r$/,''));rows.push(row);}
+  return rows;
+}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function tableauId(stopUrl){const m=String(stopUrl||'').match(/#stop\/(.+)$/);return m?m[1]:'';}
+function tabloUrl(rec){const id=tableauId(rec.stop_url);return 'https://www.stops.lt/vilnius/tablo.html#stop/'+encodeURIComponent(id);}
+function popup(rec){
+  const tid=tableauId(rec.stop_url);
+  return `<div class="st-name">${esc(rec.stop_name)}</div>
+          <div class="st-meta">Švieslentės ID: <b>${esc(tid)}</b><br>GTFS stop_id: ${esc(rec.stop_id)}${rec.stop_desc?'<br>'+esc(rec.stop_desc):''}</div>
+          <a class="tablo" target="_blank" rel="noopener" href="${tabloUrl(rec)}">Atidaryti švieslentę</a>`;
+}
+function draw(data){
+  group.clearLayers(); markers=[]; fullBounds=L.latLngBounds();
+  for(const r of data){
+    const lat=Number(r.stop_lat),lon=Number(r.stop_lon),tid=tableauId(r.stop_url);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)||!tid) continue;
+    const m=L.marker([lat,lon],{icon,title:r.stop_name||''}).bindPopup(popup(r));
+    m.rec=r; group.addLayer(m); markers.push(m); fullBounds.extend([lat,lon]);
+  }
+  if(fullBounds.isValid()) map.fitBounds(fullBounds.pad(0.03));
+  statusEl.textContent=`Rodoma ${markers.length} stotelių`;
+}
+function find(){
+  const q=qEl.value.trim().toLowerCase(); if(!q)return;
+  const found=markers.filter(m=>{
+    const r=m.rec, tid=tableauId(r.stop_url).toLowerCase();
+    return String(r.stop_name||'').toLowerCase().includes(q)||String(r.stop_desc||'').toLowerCase().includes(q)||String(r.stop_id||'').toLowerCase()===q||tid===q;
+  });
+  if(!found.length){statusEl.textContent=`Nerasta: ${qEl.value}`;return;}
+  const b=L.latLngBounds(found.map(m=>m.getLatLng()));
+  map.fitBounds(b.pad(0.25),{maxZoom:17});
+  found[0].openPopup();
+  statusEl.textContent=`Rasta ${found.length}: ${qEl.value}`;
+}
+document.getElementById('find').onclick=find;
+document.getElementById('all').onclick=()=>{if(fullBounds.isValid())map.fitBounds(fullBounds.pad(0.03));statusEl.textContent=`Rodoma ${markers.length} stotelių`;};
+qEl.addEventListener('keydown',e=>{if(e.key==='Enter')find();});
+
+async function load(){
+  const src='https://raw.githubusercontent.com/vilnius/transportas/master/gtfs/stops.txt';
+  try{
+    const res=await fetch(src,{cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const text=await res.text();
+    const rows=csvParse(text.replace(/^\uFEFF/,''));
+    const header=rows.shift();
+    const idx=Object.fromEntries(header.map((h,i)=>[h,i]));
+    records=rows.filter(r=>r.length>4).map(r=>({
+      stop_id:r[idx.stop_id]||'', stop_name:r[idx.stop_name]||'', stop_desc:r[idx.stop_desc]||'',
+      stop_lat:r[idx.stop_lat]||'', stop_lon:r[idx.stop_lon]||'', stop_url:r[idx.stop_url]||''
+    }));
+    draw(records);
+    const laz=records.find(r=>tableauId(r.stop_url)==='1652');
+    if(laz) statusEl.textContent+=` • Lazdynėliai/1652 OK`;
+  }catch(e){
+    console.error(e);
+    statusEl.textContent='KLAIDA: stotelių failas neužsikrovė';
+    alert('Nepavyko užkrauti stotelių duomenų. Patikrink internetą ir atidaryk failą iš naujo.\n\nTechninė klaida: '+e.message);
+  }
+}
+load();
+</script>
+</body>
+</html>
