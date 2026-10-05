@@ -34,7 +34,7 @@ button.alt{background:#111;color:#fff;border-color:#777}
   <input id="q" placeholder="Pvz. Lazdynėliai arba 1652" />
   <button id="find">Rasti</button>
   <button id="all" class="alt">Visos</button>
-  <div id="status" class="status">Kraunamos stotelės…</div>
+  <div id="status" class="status">Kraunamos oficialios stops.lt stotelės…</div>
 </div>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -78,7 +78,7 @@ function popup(rec){
           <div class="st-meta">Švieslentės ID: <b>${esc(tid)}</b><br>GTFS stop_id: ${esc(rec.stop_id)}${rec.stop_desc?'<br>'+esc(rec.stop_desc):''}</div>
           <a class="tablo" target="_blank" rel="noopener" href="${tabloUrl(rec)}">Atidaryti švieslentę</a>`;
 }
-function draw(data){
+function draw(data, sourceLabel){
   group.clearLayers(); markers=[]; fullBounds=L.latLngBounds();
   for(const r of data){
     const lat=Number(r.stop_lat),lon=Number(r.stop_lon),tid=tableauId(r.stop_url);
@@ -87,7 +87,7 @@ function draw(data){
     m.rec=r; group.addLayer(m); markers.push(m); fullBounds.extend([lat,lon]);
   }
   if(fullBounds.isValid()) map.fitBounds(fullBounds.pad(0.03));
-  statusEl.textContent=`Rodoma ${markers.length} stotelių`;
+  statusEl.textContent=`Rodoma ${markers.length} stotelių • ${sourceLabel}`;
 }
 function find(){
   const q=qEl.value.trim().toLowerCase(); if(!q)return;
@@ -105,26 +105,35 @@ document.getElementById('find').onclick=find;
 document.getElementById('all').onclick=()=>{if(fullBounds.isValid())map.fitBounds(fullBounds.pad(0.03));statusEl.textContent=`Rodoma ${markers.length} stotelių`;};
 qEl.addEventListener('keydown',e=>{if(e.key==='Enter')find();});
 
+function parseGtfs(text){
+  const rows=csvParse(text.replace(/^\uFEFF/,''));
+  const header=rows.shift();
+  const idx=Object.fromEntries(header.map((h,i)=>[h,i]));
+  return rows.filter(r=>r.length>4).map(r=>({
+    stop_id:r[idx.stop_id]||'', stop_name:r[idx.stop_name]||'', stop_desc:r[idx.stop_desc]||'',
+    stop_lat:r[idx.stop_lat]||'', stop_lon:r[idx.stop_lon]||'', stop_url:r[idx.stop_url]||''
+  }));
+}
+
 async function load(){
-  const src='https://raw.githubusercontent.com/vilnius/transportas/master/gtfs/stops.txt';
+  const current='./stops.txt?v='+Date.now();
+  const fallback='https://raw.githubusercontent.com/vilnius/transportas/master/gtfs/stops.txt';
   try{
-    const res=await fetch(src,{cache:'no-store'});
+    let res=await fetch(current,{cache:'no-store'});
+    let sourceLabel='oficialus stops.lt GTFS';
+    if(!res.ok){
+      res=await fetch(fallback,{cache:'no-store'});
+      sourceLabel='ATSARGINIS senas GitHub GTFS';
+    }
     if(!res.ok) throw new Error('HTTP '+res.status);
     const text=await res.text();
-    const rows=csvParse(text.replace(/^\uFEFF/,''));
-    const header=rows.shift();
-    const idx=Object.fromEntries(header.map((h,i)=>[h,i]));
-    records=rows.filter(r=>r.length>4).map(r=>({
-      stop_id:r[idx.stop_id]||'', stop_name:r[idx.stop_name]||'', stop_desc:r[idx.stop_desc]||'',
-      stop_lat:r[idx.stop_lat]||'', stop_lon:r[idx.stop_lon]||'', stop_url:r[idx.stop_url]||''
-    }));
-    draw(records);
+    records=parseGtfs(text);
+    draw(records,sourceLabel);
     const laz=records.find(r=>tableauId(r.stop_url)==='1652');
-    if(laz) statusEl.textContent+=` • Lazdynėliai/1652 OK`;
+    if(laz) statusEl.textContent+=` • Lazdynėliai stop_id ${laz.stop_id}`;
   }catch(e){
     console.error(e);
     statusEl.textContent='KLAIDA: stotelių failas neužsikrovė';
-    alert('Nepavyko užkrauti stotelių duomenų. Patikrink internetą ir atidaryk failą iš naujo.\n\nTechninė klaida: '+e.message);
   }
 }
 load();
