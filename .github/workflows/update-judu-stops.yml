@@ -1,0 +1,56 @@
+name: Update JUDU stops
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+  push:
+    branches: [gh-pages]
+    paths:
+      - '.github/workflows/update-judu-stops.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-stops:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Download official stops.lt GTFS
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 5 \
+            'https://www.stops.lt/vilnius/vilnius/gtfs.zip' \
+            -o /tmp/vilnius-gtfs.zip
+          rm -rf /tmp/vilnius-gtfs
+          mkdir -p /tmp/vilnius-gtfs
+          unzip -q /tmp/vilnius-gtfs.zip -d /tmp/vilnius-gtfs
+          test -s /tmp/vilnius-gtfs/stops.txt
+          mkdir -p judu
+          cp /tmp/vilnius-gtfs/stops.txt judu/stops.txt
+
+      - name: Validate stop data
+        run: |
+          set -euo pipefail
+          lines=$(wc -l < judu/stops.txt)
+          echo "GTFS stops.txt lines: $lines"
+          test "$lines" -gt 1000
+          grep -q '#stop/1652' judu/stops.txt
+
+      - name: Commit updated stops
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- judu/stops.txt; then
+            echo 'No GTFS stop changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add judu/stops.txt
+          git commit -m 'Update JUDU stops from official stops.lt GTFS'
+          git push origin gh-pages
