@@ -34,7 +34,7 @@ button.alt{background:#111;color:#fff;border-color:#777}
   <input id="q" placeholder="Pvz. Lazdynėliai arba 1652" />
   <button id="find">Rasti</button>
   <button id="all" class="alt">Visos</button>
-  <div id="status" class="status">Kraunamos oficialios stops.lt stotelės…</div>
+  <div id="status" class="status">Kraunamos aktualios stops.lt stotelės…</div>
 </div>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -48,7 +48,7 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
 const statusEl=document.getElementById('status');
 const qEl=document.getElementById('q');
 const group=L.layerGroup().addTo(map);
-let records=[], markers=[], fullBounds=L.latLngBounds();
+let records=[], markers=[], fullBounds=L.latLngBounds(), currentSource='';
 const icon=L.divIcon({className:'',html:'<div class="stop-dot"></div>',iconSize:[12,12],iconAnchor:[6,6]});
 
 function csvParse(text){
@@ -78,8 +78,11 @@ function popup(rec){
           <div class="st-meta">Švieslentės ID: <b>${esc(tid)}</b><br>GTFS stop_id: ${esc(rec.stop_id)}${rec.stop_desc?'<br>'+esc(rec.stop_desc):''}</div>
           <a class="tablo" target="_blank" rel="noopener" href="${tabloUrl(rec)}">Atidaryti švieslentę</a>`;
 }
+function setStatus(prefix='Rodoma'){
+  statusEl.textContent=`${prefix} ${markers.length} stotelių • ${currentSource}`;
+}
 function draw(data, sourceLabel){
-  group.clearLayers(); markers=[]; fullBounds=L.latLngBounds();
+  group.clearLayers(); markers=[]; fullBounds=L.latLngBounds(); currentSource=sourceLabel;
   for(const r of data){
     const lat=Number(r.stop_lat),lon=Number(r.stop_lon),tid=tableauId(r.stop_url);
     if(!Number.isFinite(lat)||!Number.isFinite(lon)||!tid) continue;
@@ -87,7 +90,7 @@ function draw(data, sourceLabel){
     m.rec=r; group.addLayer(m); markers.push(m); fullBounds.extend([lat,lon]);
   }
   if(fullBounds.isValid()) map.fitBounds(fullBounds.pad(0.03));
-  statusEl.textContent=`Rodoma ${markers.length} stotelių • ${sourceLabel}`;
+  setStatus();
 }
 function find(){
   const q=qEl.value.trim().toLowerCase(); if(!q)return;
@@ -95,14 +98,14 @@ function find(){
     const r=m.rec, tid=tableauId(r.stop_url).toLowerCase();
     return String(r.stop_name||'').toLowerCase().includes(q)||String(r.stop_desc||'').toLowerCase().includes(q)||String(r.stop_id||'').toLowerCase()===q||tid===q;
   });
-  if(!found.length){statusEl.textContent=`Nerasta: ${qEl.value}`;return;}
+  if(!found.length){statusEl.textContent=`Nerasta: ${qEl.value} • ${currentSource}`;return;}
   const b=L.latLngBounds(found.map(m=>m.getLatLng()));
   map.fitBounds(b.pad(0.25),{maxZoom:17});
   found[0].openPopup();
-  statusEl.textContent=`Rasta ${found.length}: ${qEl.value}`;
+  statusEl.textContent=`Rasta ${found.length}: ${qEl.value} • ${currentSource}`;
 }
 document.getElementById('find').onclick=find;
-document.getElementById('all').onclick=()=>{if(fullBounds.isValid())map.fitBounds(fullBounds.pad(0.03));statusEl.textContent=`Rodoma ${markers.length} stotelių`;};
+document.getElementById('all').onclick=()=>{if(fullBounds.isValid())map.fitBounds(fullBounds.pad(0.03));setStatus();};
 qEl.addEventListener('keydown',e=>{if(e.key==='Enter')find();});
 
 function parseGtfs(text){
@@ -116,24 +119,43 @@ function parseGtfs(text){
 }
 
 async function load(){
-  const current='./stops.txt?v='+Date.now();
-  const fallback='https://raw.githubusercontent.com/vilnius/transportas/master/gtfs/stops.txt';
+  const nord='https://nordapi.ee/api/v1/lithuania/vilnius-transit/stops';
+  const local='./stops.txt?v='+Date.now();
+  const old='https://raw.githubusercontent.com/vilnius/transportas/master/gtfs/stops.txt';
   try{
-    let res=await fetch(current,{cache:'no-store'});
-    let sourceLabel='oficialus stops.lt GTFS';
-    if(!res.ok){
-      res=await fetch(fallback,{cache:'no-store'});
-      sourceLabel='ATSARGINIS senas GitHub GTFS';
-    }
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const text=await res.text();
-    records=parseGtfs(text);
-    draw(records,sourceLabel);
-    const laz=records.find(r=>tableauId(r.stop_url)==='1652');
-    if(laz) statusEl.textContent+=` • Lazdynėliai stop_id ${laz.stop_id}`;
+    // 1) Aktualus stops.lt GTFS per CORS-enabled NordAPI mirror.
+    try{
+      const r=await fetch(nord,{cache:'no-store'});
+      if(r.ok){
+        const j=await r.json();
+        const s=j?.data?.stops;
+        if(Array.isArray(s) && s.length>1000){
+          records=s;
+          draw(records,'aktualus stops.lt GTFS');
+          const laz=records.find(x=>tableauId(x.stop_url)==='1652');
+          if(laz) statusEl.textContent+=` • 1652→${laz.stop_id}`;
+          return;
+        }
+      }
+    }catch(e){ console.warn('NordAPI nepavyko',e); }
+
+    // 2) Jei GitHub Actions jau parsiuntė oficialų GTFS ZIP, naudojam vietinę kopiją.
+    try{
+      const r=await fetch(local,{cache:'no-store'});
+      if(r.ok){
+        records=parseGtfs(await r.text());
+        if(records.length>1000){ draw(records,'oficiali stops.lt GTFS kopija'); return; }
+      }
+    }catch(e){ console.warn('Vietinė GTFS kopija nepavyko',e); }
+
+    // 3) Tik avarinis fallback — senas Vilniaus GitHub failas.
+    const r=await fetch(old,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    records=parseGtfs(await r.text());
+    draw(records,'ĮSPĖJIMAS: senas atsarginis GTFS');
   }catch(e){
     console.error(e);
-    statusEl.textContent='KLAIDA: stotelių failas neužsikrovė';
+    statusEl.textContent='KLAIDA: stotelių duomenys neužsikrovė';
   }
 }
 load();
